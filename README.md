@@ -1,5 +1,9 @@
 # React + TypeScript + Vite
 
+## Model credit
+
+The tabletop model is [Pioneer PLX-1000 Turntable Ltd. (Remastered)](https://sketchfab.com/3d-models/pioneer-plx-1000-turntable-ltd-remastered-147cd49228e24746a6a2b3c45440d989) by Mateusz Kołakowski, licensed under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/).
+
 This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
 
 Currently, two official plugins are available:

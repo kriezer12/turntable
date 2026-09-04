@@ -1,73 +1,18 @@
 @import "tailwindcss";
 
 @layer base {
-  :root {
-    --font-heading: 'Outfit', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-    --font-sans: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-    --font-mono: 'JetBrains Mono', monospace;
-  }
-
-  html, body, #root {
-    height: 100%;
-    width: 100%;
-    margin: 0;
-    padding: 0;
-    overflow: hidden;
-    position: fixed;
-    inset: 0;
-    overscroll-behavior: none;
-    font-family: var(--font-sans);
-    background-color: #0b0d13;
-    color: #e2e4ed;
-  }
-
-  h1, h2, h3, h4, h5, h6 {
-    font-family: var(--font-heading);
-  }
+  :root { font-family: Georgia, 'Times New Roman', serif; background: #201914; color: #f5ecdc; }
+  html, body, #root { width: 100%; height: 100%; margin: 0; overflow: hidden; background: #201914; }
+  * { box-sizing: border-box; }
 }
 
-/* Custom vinyl and hi-fi aesthetic utility classes */
-.vinyl-grooves {
-  background: repeating-radial-gradient(
-    circle at center,
-    #111318 0,
-    #111318 2px,
-    #181a20 3px,
-    #111318 4px
-  );
-}
+.listening-room { position: fixed; inset: 0; overflow: hidden; background: radial-gradient(circle at 53% 18%, #5a463a, #211b16 72%); }
+.turntable-canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+.room-wordmark { position: absolute; z-index: 1; top: 24px; left: 28px; display: flex; gap: 10px; align-items: center; color: rgba(248, 235, 212, .72); font-family: Arial, sans-serif; font-size: 9px; font-weight: 600; letter-spacing: .2em; pointer-events: none; }
+.room-wordmark i { height: 1px; width: 30px; background: rgba(248, 235, 212, .45); }
+.scene-instruction { position: absolute; z-index: 1; bottom: 21px; left: 50%; transform: translateX(-50%); margin: 0; color: rgba(245, 230, 207, .5); font-family: Arial, sans-serif; font-size: 9px; letter-spacing: .16em; text-transform: uppercase; white-space: nowrap; pointer-events: none; }
 
-.metallic-chassis {
-  background: linear-gradient(145deg, #181b22, #0d0e12);
-  box-shadow: 
-    inset 0 1px 1px rgba(255, 255, 255, 0.08),
-    inset 0 -1px 2px rgba(0, 0, 0, 0.8),
-    0 20px 40px -15px rgba(0, 0, 0, 0.7);
-}
-
-.amber-glow {
-  box-shadow: 0 0 25px rgba(245, 158, 11, 0.25);
-}
-
-.glass-panel {
-  background: rgba(18, 20, 29, 0.75);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-}
-
-/* Custom scrollbars */
-::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
-}
-::-webkit-scrollbar-track {
-  background: #0e1017;
-}
-::-webkit-scrollbar-thumb {
-  background: #252836;
-  border-radius: 9999px;
-}
-::-webkit-scrollbar-thumb:hover {
-  background: #f59e0b;
+@media (max-width: 640px) {
+  .room-wordmark { top: 16px; left: 17px; font-size: 8px; }
+  .scene-instruction { bottom: 14px; font-size: 8px; }
 }
