@@ -106,17 +106,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(200).end()
   }
 
-  const query = (req.query.q as string)?.trim() || ''
+  const query = Array.isArray(req.query.q) ? req.query.q[0] : (req.query.q as string)
+  const trimmedQuery = query?.trim() || ''
   const clientId = process.env.SPOTIFY_CLIENT_ID
   const clientSecret = process.env.SPOTIFY_CLIENT_SECRET
 
   // If credentials are not configured, serve curated mock data for demonstration
   if (!clientId || !clientSecret) {
-    const filtered = query
+    const filtered = trimmedQuery
       ? MOCK_VINYL_ITEMS.filter(item =>
-          item.name.toLowerCase().includes(query.toLowerCase()) ||
-          item.artists.some(a => a.name.toLowerCase().includes(query.toLowerCase())) ||
-          item.album.name.toLowerCase().includes(query.toLowerCase())
+          item.name.toLowerCase().includes(trimmedQuery.toLowerCase()) ||
+          item.artists.some(a => a.name.toLowerCase().includes(trimmedQuery.toLowerCase())) ||
+          item.album.name.toLowerCase().includes(trimmedQuery.toLowerCase())
         )
       : MOCK_VINYL_ITEMS
 
@@ -129,9 +130,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   try {
     const token = await getSpotifyToken(clientId, clientSecret)
-    const searchType = (req.query.type as string) || 'track'
-    const limit = (req.query.limit as string) || '12'
-    const spotifyUrl = `https://api.spotify.com/v1/search?q=${encodeURIComponent(query)}&type=${encodeURIComponent(searchType)}&limit=${limit}`
+    const searchType = Array.isArray(req.query.type) ? req.query.type[0] : (req.query.type as string) || 'track'
+    const rawLimit = Array.isArray(req.query.limit) ? req.query.limit[0] : (req.query.limit as string)
+    const limit = Math.min(50, Math.max(1, parseInt(rawLimit || '12', 10) || 12))
+    const spotifyUrl = `https://api.spotify.com/v1/search?q=${encodeURIComponent(trimmedQuery)}&type=${encodeURIComponent(searchType)}&limit=${limit}`
 
     const spotifyRes = await fetch(spotifyUrl, {
       headers: { 'Authorization': `Bearer ${token}` }
