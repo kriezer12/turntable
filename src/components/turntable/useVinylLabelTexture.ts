@@ -31,9 +31,13 @@ export function useVinylLabelTexture({
   useEffect(() => {
     const ctx = canvas.getContext('2d')
     if (!ctx) return
+    let isCancelled = false
+    let image: HTMLImageElement | null = null
+    let loadTimeout: number | undefined
 
     // Draw Vintage Vinyl Record Label
     const drawBaseLabel = (imageObj?: HTMLImageElement) => {
+      if (isCancelled) return
       ctx.clearRect(0, 0, 512, 512)
 
       // Background label circle
@@ -124,24 +128,31 @@ export function useVinylLabelTexture({
 
     // If artworkUrl exists, attempt to load it with CORS fallback
     if (artworkUrl) {
-      const img = new Image()
-      img.crossOrigin = 'anonymous'
-      const loadTimeout = setTimeout(() => {
+      image = new Image()
+      image.crossOrigin = 'anonymous'
+      loadTimeout = window.setTimeout(() => {
         // If image hasn't loaded in 5s, keep the fallback label
-        console.warn('Artwork image load timed out, using vinyl label fallback')
         drawBaseLabel()
       }, 5000)
-      img.onload = () => {
-        clearTimeout(loadTimeout)
-        drawBaseLabel(img)
+      image.onload = () => {
+        if (loadTimeout !== undefined) window.clearTimeout(loadTimeout)
+        drawBaseLabel(image ?? undefined)
       }
-      img.onerror = () => {
-        clearTimeout(loadTimeout)
+      image.onerror = () => {
+        if (loadTimeout !== undefined) window.clearTimeout(loadTimeout)
         // Keeps the stylized vintage base label on image failure
-        console.warn('Artwork image failed to load, using vinyl label fallback')
         drawBaseLabel()
       }
-      img.src = artworkUrl
+      image.src = artworkUrl
+    }
+
+    return () => {
+      isCancelled = true
+      if (loadTimeout !== undefined) window.clearTimeout(loadTimeout)
+      if (image) {
+        image.onload = null
+        image.onerror = null
+      }
     }
   }, [canvas, texture, artworkUrl, trackTitle, artistName])
 
