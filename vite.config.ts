@@ -1,102 +1,75 @@
 import { defineConfig, loadEnv } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
+import {
+  catalogError,
+  clampCatalogLimit,
+  filterDemoCatalog,
+  normalizeSpotifySearchPayload,
+  parseCatalogOffset,
+  parseCatalogTypes,
+  type SpotifySearchPayload
+} from './src/services/spotify/catalog.js'
 
-// In-memory token cache for Spotify Client Credentials
-let cachedToken: { access_token: string; expires_at: number } | null = null
+const MAX_QUERY_LENGTH = 120
+const TOKEN_REFRESH_BUFFER_MS = 60_000
+
+let cachedToken: { accessToken: string; expiresAt: number } | null = null
+
+class SpotifyGatewayError extends Error {
+  readonly code: 'CATALOG_AUTH_ERROR' | 'CATALOG_RATE_LIMITED' | 'CATALOG_UNAVAILABLE'
+  readonly status: 429 | 502
+
+  constructor(
+    code: 'CATALOG_AUTH_ERROR' | 'CATALOG_RATE_LIMITED' | 'CATALOG_UNAVAILABLE',
+    status: 429 | 502
+  ) {
+    super(code)
+    this.name = 'SpotifyGatewayError'
+    this.code = code
+    this.status = status
+  }
+}
 
 async function getSpotifyToken(clientId: string, clientSecret: string) {
   const now = Date.now()
-  if (cachedToken && cachedToken.expires_at > now + 60000) {
-    return cachedToken.access_token
+  if (cachedToken && cachedToken.expiresAt > now + TOKEN_REFRESH_BUFFER_MS) {
+    return cachedToken.accessToken
   }
 
   const credentials = Buffer.from(`${clientId}:${clientSecret}`).toString('base64')
-  const res = await fetch('https://accounts.spotify.com/api/token', {
+  const response = await fetch('https://accounts.spotify.com/api/token', {
     method: 'POST',
     headers: {
-      'Authorization': `Basic ${credentials}`,
+      Authorization: `Basic ${credentials}`,
       'Content-Type': 'application/x-www-form-urlencoded'
     },
     body: 'grant_type=client_credentials'
   })
 
-  if (!res.ok) {
-    const errorText = await res.text()
-    throw new Error(`Spotify token error: ${res.status} ${errorText}`)
-  }
+  if (!response.ok) throw new SpotifyGatewayError('CATALOG_AUTH_ERROR', 502)
+  const data = await response.json() as { access_token?: string; expires_in?: number }
+  if (!data.access_token) throw new SpotifyGatewayError('CATALOG_AUTH_ERROR', 502)
 
-  const data = (await res.json()) as any
   cachedToken = {
-    access_token: data.access_token,
-    expires_at: now + (data.expires_in * 1000)
+    accessToken: data.access_token,
+    expiresAt: now + (data.expires_in ?? 3600) * 1000
   }
-  return cachedToken.access_token
+  return cachedToken.accessToken
 }
 
-// Curated default vinyl tracks for instant demo / mock mode
-const MOCK_VINYL_ITEMS = [
-  {
-    id: '4cOdK2wGLETKBW3PvgPWqT',
-    name: 'Dreams',
-    artists: [{ name: 'Fleetwood Mac' }],
-    album: {
-      name: 'Rumours',
-      images: [
-        { url: 'https://i.scdn.co/image/ab67616d0000b273e970a2569566ba7b746813a3', width: 640, height: 640 },
-        { url: 'https://i.scdn.co/image/ab67616d00001e02e970a2569566ba7b746813a3', width: 300, height: 300 }
-      ]
-    },
-    duration_ms: 257800,
-    uri: 'spotify:track:4cOdK2wGLETKBW3PvgPWqT',
-    type: 'track'
-  },
-  {
-    id: '3TO7bbrUKrOSPGRTB5MeCz',
-    name: 'Time',
-    artists: [{ name: 'Pink Floyd' }],
-    album: {
-      name: 'The Dark Side of the Moon',
-      images: [
-        { url: 'https://i.scdn.co/image/ab67616d0000b273ea7caaff71dea1051d49b2fe', width: 640, height: 640 },
-        { url: 'https://i.scdn.co/image/ab67616d00001e02ea7caaff71dea1051d49b2fe', width: 300, height: 300 }
-      ]
-    },
-    duration_ms: 413000,
-    uri: 'spotify:track:3TO7bbrUKrOSPGRTB5MeCz',
-    type: 'track'
-  },
-  {
-    id: '7ILXfN4kJ3hYLitnPjOsLi',
-    name: 'So What',
-    artists: [{ name: 'Miles Davis' }],
-    album: {
-      name: 'Kind of Blue',
-      images: [
-        { url: 'https://i.scdn.co/image/ab67616d0000b273a00b11c129b27a88fc72f36b', width: 640, height: 640 },
-        { url: 'https://i.scdn.co/image/ab67616d00001e02a00b11c129b27a88fc72f36b', width: 300, height: 300 }
-      ]
-    },
-    duration_ms: 562000,
-    uri: 'spotify:track:7ILXfN4kJ3hYLitnPjOsLi',
-    type: 'track'
-  },
-  {
-    id: '3fDDsZoNKTvm2zj6gmfD2H',
-    name: 'Get Lucky',
-    artists: [{ name: 'Daft Punk', }, { name: 'Pharrell Williams' }],
-    album: {
-      name: 'Random Access Memories',
-      images: [
-        { url: 'https://i.scdn.co/image/ab67616d0000b2739b52a781b0a8809403fe7b56', width: 640, height: 640 },
-        { url: 'https://i.scdn.co/image/ab67616d00001e029b52a781b0a8809403fe7b56', width: 300, height: 300 }
-      ]
-    },
-    duration_ms: 369626,
-    uri: 'spotify:track:3fDDsZoNKTvm2zj6gmfD2H',
-    type: 'track'
-  }
-]
+function writeJson(response: import('node:http').ServerResponse, status: number, payload: unknown) {
+  response.statusCode = status
+  response.setHeader('Content-Type', 'application/json')
+  response.setHeader('Cache-Control', 'no-store')
+  response.end(JSON.stringify(payload))
+}
+
+function errorMessage(code: SpotifyGatewayError['code']) {
+  if (code === 'CATALOG_AUTH_ERROR') return 'Spotify catalog authorization is unavailable. Try again later.'
+  if (code === 'CATALOG_RATE_LIMITED') return 'Spotify search is busy. Wait a moment and retry.'
+  return 'Spotify catalog search is unavailable. Try again later.'
+}
 
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '')
@@ -108,53 +81,53 @@ export default defineConfig(({ mode }) => {
       {
         name: 'spotify-api-proxy',
         configureServer(server) {
-          server.middlewares.use(async (req, res, next) => {
-            if (!req.url?.startsWith('/api/spotify/search')) {
-              return next()
-            }
+          server.middlewares.use(async (request, response, next) => {
+            if (!request.url?.startsWith('/api/spotify/search')) return next()
+            if (request.method === 'OPTIONS') return writeJson(response, 204, {})
+            if (request.method !== 'GET') return writeJson(response, 405, catalogError('CATALOG_UNAVAILABLE', 'Search only supports GET requests.'))
 
-            const url = new URL(req.url, 'http://localhost')
-            const query = url.searchParams.get('q')?.trim() || ''
+            const url = new URL(request.url, 'http://localhost')
+            const query = url.searchParams.get('q')?.trim() ?? ''
+            if (!query) return writeJson(response, 400, catalogError('INVALID_QUERY', 'Enter a song, artist, album, or playlist to search.'))
+            if (query.length > MAX_QUERY_LENGTH) return writeJson(response, 400, catalogError('INVALID_QUERY', `Keep searches under ${MAX_QUERY_LENGTH} characters.`))
+
+            const types = parseCatalogTypes(url.searchParams.get('types') ?? url.searchParams.get('type'))
+            const limit = clampCatalogLimit(url.searchParams.get('limit'))
+            const offset = parseCatalogOffset(url.searchParams.get('offset'))
             const clientId = env.SPOTIFY_CLIENT_ID || process.env.SPOTIFY_CLIENT_ID
             const clientSecret = env.SPOTIFY_CLIENT_SECRET || process.env.SPOTIFY_CLIENT_SECRET
 
-            // If credentials are not configured, serve curated mock data for demonstration
             if (!clientId || !clientSecret) {
-              const filtered = query
-                ? MOCK_VINYL_ITEMS.filter(item => 
-                    item.name.toLowerCase().includes(query.toLowerCase()) ||
-                    item.artists.some(a => a.name.toLowerCase().includes(query.toLowerCase())) ||
-                    item.album.name.toLowerCase().includes(query.toLowerCase())
-                  )
-                : MOCK_VINYL_ITEMS
-
-              res.setHeader('Content-Type', 'application/json')
-              res.end(JSON.stringify({
-                tracks: { items: filtered },
-                isDemoMode: true,
-                message: 'Operating in Vinyl Crate Demo Mode. Set SPOTIFY_CLIENT_ID and SPOTIFY_CLIENT_SECRET in .env for live catalog search.'
-              }))
-              return
+              return writeJson(response, 200, filterDemoCatalog(query, types, limit, offset))
             }
 
             try {
               const token = await getSpotifyToken(clientId, clientSecret)
-              const searchType = url.searchParams.get('type') || 'track'
-              const limit = url.searchParams.get('limit') || '12'
-              const spotifyUrl = `https://api.spotify.com/v1/search?q=${encodeURIComponent(query)}&type=${encodeURIComponent(searchType)}&limit=${limit}`
+              const market = (env.SPOTIFY_MARKET || process.env.SPOTIFY_MARKET)?.trim().toUpperCase()
+              const params = new URLSearchParams({
+                q: query,
+                type: types.join(','),
+                limit: String(limit),
+                offset: String(offset)
+              })
+              if (market) params.set('market', market)
 
-              const spotifyRes = await fetch(spotifyUrl, {
-                headers: { 'Authorization': `Bearer ${token}` }
+              const spotifyResponse = await fetch(`https://api.spotify.com/v1/search?${params.toString()}`, {
+                headers: { Authorization: `Bearer ${token}` }
               })
 
-              const data = (await spotifyRes.json()) as any
-              res.setHeader('Content-Type', 'application/json')
-              res.end(JSON.stringify({ ...data, isDemoMode: false }))
-            } catch (err: any) {
-              console.error('Spotify Search Proxy Error:', err)
-              res.statusCode = 500
-              res.setHeader('Content-Type', 'application/json')
-              res.end(JSON.stringify({ error: err.message || 'Spotify API error' }))
+              if (spotifyResponse.status === 401 || spotifyResponse.status === 403) throw new SpotifyGatewayError('CATALOG_AUTH_ERROR', 502)
+              if (spotifyResponse.status === 429) throw new SpotifyGatewayError('CATALOG_RATE_LIMITED', 429)
+              if (!spotifyResponse.ok) throw new SpotifyGatewayError('CATALOG_UNAVAILABLE', 502)
+
+              const payload = await spotifyResponse.json() as SpotifySearchPayload
+              return writeJson(response, 200, normalizeSpotifySearchPayload(payload, query, types, limit, offset))
+            } catch (error) {
+              const gatewayError = error instanceof SpotifyGatewayError
+                ? error
+                : new SpotifyGatewayError('CATALOG_UNAVAILABLE', 502)
+              console.error('[spotify-catalog]', gatewayError.code)
+              return writeJson(response, gatewayError.status, catalogError(gatewayError.code, errorMessage(gatewayError.code)))
             }
           })
         }
